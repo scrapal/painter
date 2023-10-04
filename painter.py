@@ -9,12 +9,13 @@ def rect(x1, y1, x2, y2):
     return x, y, w, h
 
 class Shape(ABC):
-    def __init__(self, x, y, w, h, colour):
+    def __init__(self, x, y, w, h, colour, outline_colour):
         self.x = x
         self.y = y
         self.w = w
         self.h = h
         self.colour = colour
+        self.outline_colour = outline_colour
     
     def normalize(self):
         if self.w < 0:
@@ -52,6 +53,7 @@ class Shape(ABC):
 class Rect(Shape):
     def draw(self, canvas):
         canvas.draw_rect(self.get_rect(), self.colour)
+        canvas.draw_rect(self.get_rect(), self.outline_colour, 2)
     
     def draw_focus(self, canvas):
         canvas.draw_rect(self.get_rect(), (255, 128, 0), 2)
@@ -59,6 +61,7 @@ class Rect(Shape):
 class Ellipse(Shape):
     def draw(self, canvas):
         canvas.draw_ellipse(self.x, self.y, self.w, self.h, self.colour)
+        canvas.draw_ellipse(self.get_rect(), self.outline_colour, 2)
     
     def draw_focus(self, canvas):
         canvas.draw_ellipse(self.x, self.y, self.w, self.h, (255, 128, 0), 2)
@@ -209,7 +212,7 @@ class EllipseTool(Tool):
             self.drawing = False
             x, y = pygame.mouse.get_pos()
             x, y, w, h = rect(x, y, self.x, self.y)
-            shape = Ellipse(x, y, w, h, canvas.colour)
+            shape = Ellipse(x, y, w, h, canvas.colour, canvas.outline_colour)
             canvas.add_shape(shape)
 
 class RectTool(Tool):
@@ -244,12 +247,17 @@ class RectTool(Tool):
             self.drawing = False
             x, y = pygame.mouse.get_pos()
             x, y, w, h = rect(x, y, self.x, self.y)
-            shape = Rect(x, y, w, h, canvas.colour)
+            shape = Rect(x, y, w, h, canvas.colour, canvas.outline_colour)
             canvas.add_shape(shape)
 
 class ColourBoard():
     def draw_icon(self, canvas, x, y, w, h, colour):
         canvas.draw_rect((x+5, y+5, w-10, h-10), colour)
+
+class PreviewColourBoard():
+    def draw_board(self, canvas, x, y, w, h):
+        canvas.draw_rect((x+5, y+5, w-10, h-10), canvas.colour)
+        canvas.draw_rect((x+5, y+5, w-10, h-10), canvas.outline_colour, 3)
 
 class Canvas:
     shapes: list[Shape]
@@ -265,6 +273,7 @@ class Canvas:
             RectTool(),
             EllipseTool()
         ]
+        self.board = PreviewColourBoard()
         self.colours = [
             (0, 0, 0), 
             (255, 0, 0), 
@@ -273,10 +282,12 @@ class Canvas:
             (0, 255, 0), 
             (0, 255, 255), 
             (0, 0, 255),  
-            (255, 0, 255)
+            (255, 0, 255), 
+            (255, 255, 255)
         ]
         self.tool = self.tools[0]
         self.colour = self.colours[0]
+        self.outline_colour = self.colours[0]
     
     def handle_tool_switch(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -292,7 +303,10 @@ class Canvas:
             for colour, x, y, w, h in self.each_colour():
                 mousex, mousey = pygame.mouse.get_pos()
                 if pygame.Rect(x, y, w, h).collidepoint(mousex, mousey):
-                    self.colour = colour
+                    if event.button == pygame.BUTTON_LEFT:
+                        self.colour = colour
+                    elif event.button == pygame.BUTTON_RIGHT:
+                        self.outline_colour = colour
                     return True
 
     def each_tool(self):
@@ -304,8 +318,8 @@ class Canvas:
             yield tool, x, y, width, height
 
     def each_colour(self):
-        width = 80
-        height = 70
+        width = 70
+        height = 60
         for i in range(len(self.colours)):
             colour = self.colours[i]
             x, y = 710, 20 + height * i
@@ -343,8 +357,6 @@ class Canvas:
         for colour, x, y, w, h in self.each_colour():
             self.draw_rect((x, y, w, h), (192, 192, 192))
             ColourBoard().draw_icon(self, x, y, w, h, colour)
-            if colour == self.colour:
-                self.draw_rect((x, y, w, h), (255, 128, 0), 2)
     
     def draw(self):
         self.draw_background()
@@ -352,6 +364,7 @@ class Canvas:
             shape.draw(self)
         self.tool.draw(self)
         self.draw_tools()
+        self.board.draw_board(canvas, 20, 20 + 80 * len(self.tools), 100, 80)
         self.draw_colours()
         pygame.display.update()
     

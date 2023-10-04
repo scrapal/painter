@@ -60,11 +60,11 @@ class Rect(Shape):
 
 class Ellipse(Shape):
     def draw(self, canvas):
-        canvas.draw_ellipse(self.x, self.y, self.w, self.h, self.colour)
+        canvas.draw_ellipse(self.get_rect(), self.colour)
         canvas.draw_ellipse(self.get_rect(), self.outline_colour, 2)
     
     def draw_focus(self, canvas):
-        canvas.draw_ellipse(self.x, self.y, self.w, self.h, (255, 128, 0), 2)
+        canvas.draw_ellipse(self.get_rect(), (255, 128, 0), 2)
 
 class Tool:
     def draw_icon(self, canvas, x, y, w, h):
@@ -75,6 +75,9 @@ class Tool:
 
     def handle_input(self, canvas, event):
         pass
+
+    def handle_colour(self, colour, outline_colour):
+        return False
 
 class SelectTool(Tool):
     shape: Shape
@@ -104,7 +107,6 @@ class SelectTool(Tool):
                 return i
     
     def resize(self, handle, dx, dy):
-        print(dx, dy)
         if handle == 0:
             self.shape.move(dx, dy)
             self.shape.resize(-dx, -dy)
@@ -117,8 +119,11 @@ class SelectTool(Tool):
         elif handle == 3:
             self.shape.resize(dx, dy)
 
-    def change_colour(self, colour):
-        self.shape.colour = colour
+    def change_colour(self, colour, outline_colour):
+        if colour:
+            self.shape.colour = colour
+        if outline_colour:
+            self.shape.outline_colour = outline_colour
 
     def draw_handles(self, canvas):
         for x, y, w, h in self.get_handles():
@@ -133,9 +138,12 @@ class SelectTool(Tool):
     def draw_icon(self, canvas, x, y, w, h):
         canvas.draw_image(x+5, y+5, self.pointer)
 
+    def handle_colour(self, colour, outline_colour):
+        self.change_colour(colour, outline_colour)
+        return True
+
     def handle_input(self, canvas, event):
         if self.shape:
-            self.change_colour(canvas.colour)
             if event.type == pygame.MOUSEBUTTONDOWN:
                 x, y = pygame.mouse.get_pos()
                 handle = self.get_handle(x, y)
@@ -185,13 +193,13 @@ class EllipseTool(Tool):
         self.drawing = False
 
     def draw_icon(self, canvas, x, y, w, h):
-        canvas.draw_ellipse(x+5, y+5, w-10, h-10)
+        canvas.draw_ellipse((x+5, y+5, w-10, h-10))
     
     def draw(self, canvas):
         if not self.drawing:
             return
         x, y, w, h = rect(self.x, self.y, self.mx, self.my)
-        canvas.draw_ellipse(x, y, w, h, (128, 128, 128))
+        canvas.draw_ellipse((x, y, w, h), (128, 128, 128))
 
     def handle_input(self, canvas, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -304,9 +312,11 @@ class Canvas:
                 mousex, mousey = pygame.mouse.get_pos()
                 if pygame.Rect(x, y, w, h).collidepoint(mousex, mousey):
                     if event.button == pygame.BUTTON_LEFT:
-                        self.colour = colour
+                        if not self.tool.handle_colour(colour, None):
+                            self.colour = colour
                     elif event.button == pygame.BUTTON_RIGHT:
-                        self.outline_colour = colour
+                        if not self.tool.handle_colour(None, colour):
+                            self.outline_colour = colour
                     return True
 
     def each_tool(self):
@@ -340,8 +350,8 @@ class Canvas:
     def draw_image(self, x, y, image):
         self.win.blit(image, (x, y))
 
-    def draw_ellipse(self, x, y, w, h, color = (0, 0, 0), width = 0):
-        pygame.draw.ellipse(self.win, color, pygame.Rect(x, y, w, h), width)
+    def draw_ellipse(self, rect, color = (0, 0, 0), width = 0):
+        pygame.draw.ellipse(self.win, color, rect, width)
 
     def draw_rect(self, rect, color = (0, 0, 0), width = 0):
         pygame.draw.rect(self.win, color, rect, width)

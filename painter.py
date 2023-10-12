@@ -12,6 +12,7 @@ Color = pygame.Color
 Rect = pygame.Rect
 Vector2 = pygame.Vector2
 Coordinate = tuple[int, int]
+Image = pygame.Surface
 
 # pylint: disable=no-member
 pygame.init()
@@ -34,7 +35,7 @@ GRAY = pygame.Color(128, 128, 128)
 
 class ICanvas(ABC):
     @abstractmethod
-    def draw_image(self, x: float, y: float, image: pygame.Surface):
+    def draw_image(self, x: float, y: float, image: Image):
         pass
 
     @abstractmethod
@@ -53,6 +54,7 @@ class ICanvas(ABC):
     def draw_line(self, p1: Vector2, p2: Vector2, color: Color = BLACK, width: int = 1):
         pass
 
+class IManager(ABC):
     @abstractmethod
     def select(self, x: float, y: float) -> tuple[bool, 'Shape' | None]:
         pass
@@ -63,6 +65,14 @@ class ICanvas(ABC):
 
     @abstractmethod
     def add_shape(self, shape: 'Shape'):
+        pass
+
+    @abstractmethod
+    def get_colour(self) -> Color:
+        pass
+
+    @abstractmethod
+    def get_outline_colour(self) -> Color:
         pass
 
 
@@ -184,7 +194,7 @@ class Tool(ABC):
     def draw(self, _canvas: ICanvas):
         pass
 
-    def handle_input(self, _canvas: ICanvas, _event: pygame.event.Event):
+    def handle_input(self, _manager: IManager, _event: pygame.event.Event):
         return False
 
     def handle_colour(self, _colour: Color | None, _outline_colour: Color | None):
@@ -275,7 +285,7 @@ class SelectTool(Tool):
         self.change_colour(colour, outline_colour)
         return True
 
-    def handle_input(self, canvas: ICanvas, event: pygame.event.Event):
+    def handle_input(self, manager: IManager, event: pygame.event.Event):
         if self.shape:
             if event.type == MOUSEBUTTONDOWN:
                 x, y = pygame.mouse.get_pos()
@@ -305,7 +315,7 @@ class SelectTool(Tool):
         if event.type == MOUSEBUTTONDOWN:
             self.dragging = True
             x, y = pygame.mouse.get_pos()
-            self.dragging, self.shape = canvas.select(x, y)
+            self.dragging, self.shape = manager.select(x, y)
             self.x, self.y = x, y
         elif event.type == MOUSEMOTION:
             if not self.dragging or not self.shape:
@@ -319,7 +329,7 @@ class SelectTool(Tool):
         elif event.type == KEYUP:
             if event.key == K_DELETE or event.key == K_BACKSPACE:
                 if self.shape:
-                    canvas.remove_shape(self.shape)
+                    manager.remove_shape(self.shape)
                     self.shape = None
 
 
@@ -340,7 +350,7 @@ class EllipseTool(Tool):
         x, y, w, h = make_rect(self.x, self.y, self.mx, self.my)
         canvas.draw_ellipse(Rect(x, y, w, h), GRAY)
 
-    def handle_input(self, canvas: ICanvas, event: pygame.event.Event):
+    def handle_input(self, manager: IManager, event: pygame.event.Event):
         if event.type == MOUSEBUTTONDOWN:
             x, y = pygame.mouse.get_pos()
             self.drawing = True
@@ -360,7 +370,7 @@ class EllipseTool(Tool):
             x, y = pygame.mouse.get_pos()
             x, y, w, h = make_rect(x, y, self.x, self.y)
             shape = Ellipse(x, y, w, h)
-            canvas.add_shape(shape)
+            manager.add_shape(shape)
 
 
 class RectTool(Tool):
@@ -380,7 +390,7 @@ class RectTool(Tool):
         rect = make_rect(self.x, self.y, self.mx, self.my)
         canvas.draw_rect(rect, 0, GRAY)
 
-    def handle_input(self, canvas: ICanvas, event: pygame.event.Event):
+    def handle_input(self, manager: IManager, event: pygame.event.Event):
         if event.type == MOUSEBUTTONDOWN:
             x, y = pygame.mouse.get_pos()
             self.drawing = True
@@ -400,7 +410,7 @@ class RectTool(Tool):
             x, y = pygame.mouse.get_pos()
             x, y, w, h = make_rect(x, y, self.x, self.y)
             shape = Rectangle(x, y, w, h)
-            canvas.add_shape(shape)
+            manager.add_shape(shape)
 
 
 class ColourBoard():
@@ -410,14 +420,46 @@ class ColourBoard():
 
 
 class PreviewColourBoard():
-    def draw_board(self, canvas, rect):
+    def draw_board(self, canvas: ICanvas, manager: IManager, rect):
         x, y, w, h = rect
-        canvas.draw_rect(Rect(x+5, y+5, w-10, h-10), 0, canvas.colour)
+        canvas.draw_rect(Rect(x+5, y+5, w-10, h-10), 0, manager.get_colour())
         canvas.draw_rect(Rect(x+5, y+5, w-10, h-10),
-                         0, canvas.outline_colour, 3)
+                         0, manager.get_outline_colour(), 3)
 
 
-class Canvas(ICanvas):
+class PygameCanvas(ICanvas):
+    def __init__(self):
+        self.win = pygame.display.set_mode((800, 600))
+
+    def draw_image(self, x: float, y: float, image: pygame.Surface):
+        self.win.blit(image, (x, y))
+
+    def draw_ellipse(self, rect: Rect, color: Color = BLACK, width: int = 0):
+        pygame.draw.ellipse(self.win, color, rect, width)
+
+    def draw_polygon(self, points: Sequence[Coordinate], color: Color = BLACK, width: int = 0):
+        pygame.draw.polygon(self.win, color, points, width)
+
+    def draw_rect(self, rect: Rect, rotation: float = 0, color: Color = BLACK, width: int = 0):
+        center = rect.center
+        points = [rect.topleft, rect.topright,
+                  rect.bottomright, rect.bottomleft]
+        new_points = []
+        for point in points:
+            p = pygame.Vector2(point)
+            delta = p - center
+            delta = delta.rotate(rotation) + center
+            new_points.append(delta)
+        pygame.draw.polygon(self.win, color, new_points, width)
+
+    def draw_line(self, p1: Vector2, p2: Vector2, color: Color = BLACK, width: int = 1):
+        pygame.draw.line(self.win, color, p1, p2, width)
+
+    def fill(self, color):
+        self.win.fill(color)
+
+
+class Painter(IManager):
     shapes: list[Shape]
     tools: list[Tool]
     colours: list[Color]
@@ -426,7 +468,7 @@ class Canvas(ICanvas):
 
     def __init__(self):
         self.shapes = []
-        self.win = pygame.display.set_mode((800, 600))
+        self.canvas = PygameCanvas()
         self.clock = pygame.time.Clock()
         self.running = False
         self.fps = 60
@@ -501,51 +543,33 @@ class Canvas(ICanvas):
         shape.colour = self.colour
         shape.outline_colour = self.outline_colour
         self.shapes.append(shape)
+    
+    def get_colour(self) -> Color:
+        return self.colour
 
-    def draw_image(self, x: float, y: float, image: pygame.Surface):
-        self.win.blit(image, (x, y))
-
-    def draw_ellipse(self, rect: Rect, color: Color = BLACK, width: int = 0):
-        pygame.draw.ellipse(self.win, color, rect, width)
-
-    def draw_polygon(self, points: Sequence[Coordinate], color: Color = BLACK, width: int = 0):
-        pygame.draw.polygon(self.win, color, points, width)
-
-    def draw_rect(self, rect: Rect, rotation: float = 0, color: Color = BLACK, width: int = 0):
-        center = rect.center
-        points = [rect.topleft, rect.topright,
-                  rect.bottomright, rect.bottomleft]
-        new_points = []
-        for point in points:
-            p = pygame.Vector2(point)
-            delta = p - center
-            delta = delta.rotate(rotation) + center
-            new_points.append(delta)
-        pygame.draw.polygon(self.win, color, new_points, width)
-
-    def draw_line(self, p1: Vector2, p2: Vector2, color: Color = BLACK, width: int = 1):
-        pygame.draw.line(self.win, color, p1, p2, width)
+    def get_outline_colour(self) -> Color:
+        return self.outline_colour
 
     def draw_tools(self):
         for tool, rect in self.each_tool():
-            self.draw_rect(rect, 0, pygame.Color(192, 192, 192))
-            tool.draw_icon(self, rect)
+            self.canvas.draw_rect(rect, 0, pygame.Color(192, 192, 192))
+            tool.draw_icon(self.canvas, rect)
             if tool == self.tool:
-                self.draw_rect(rect, 0, pygame.Color(255, 128, 0), 2)
+                self.canvas.draw_rect(rect, 0, pygame.Color(255, 128, 0), 2)
 
     def draw_colours(self):
         for colour, rect in self.each_colour():
-            self.draw_rect(rect, 0, pygame.Color(192, 192, 192))
-            ColourBoard().draw_icon(self, rect, colour)
+            self.canvas.draw_rect(rect, 0, pygame.Color(192, 192, 192))
+            ColourBoard().draw_icon(self.canvas, rect, colour)
 
     def draw(self):
         self.draw_background()
         for shape in self.shapes:
-            shape.draw(self)
-        self.tool.draw(self)
+            shape.draw(self.canvas)
+        self.tool.draw(self.canvas)
         self.draw_tools()
-        self.board.draw_board(self, Rect(
-            20, 20 + 80 * len(self.tools), 100, 80))
+        self.board.draw_board(self.canvas, self,
+                              Rect(20, 20 + 80 * len(self.tools), 100, 80))
         self.draw_colours()
         pygame.display.update()
 
@@ -571,8 +595,8 @@ class Canvas(ICanvas):
         pygame.quit()
 
     def draw_background(self):
-        self.win.fill((255, 255, 255))
+        self.canvas.fill((255, 255, 255))
 
 
 if __name__ == "__main__":
-    Canvas().run()
+    Painter().run()
